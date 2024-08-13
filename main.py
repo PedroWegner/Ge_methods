@@ -1,11 +1,12 @@
 from models.unifac_method import *
 import time
 from models.nrtl_method import *
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator
 from py4j.java_gateway import JavaGateway
+import matplotlib.pyplot as plt
+import sympy as sp
+from sympy import hessian, Matrix
+
 
 # For unifac method, parameters of ddbst were used and they are viewed on: https://www.ddbst.com/published-parameters-unifac.html
 
@@ -19,12 +20,24 @@ def list_fractions(num_points):
     this function creates a list of molar fractions with number of points to the power of two points
     The result list cotains three fractions, the sum of which is equal to 1.
     """
+    # list_aux = []
+    # for x1 in [1 - i * (1 / (num_points - 1)) for i in range(num_points)]:
+    #     x2_max = 1 - x1
+    #     for x2 in [i * (x2_max / (num_points - 1)) for i in range(num_points)]:
+    #         x3 = 1 - x1 - x2
+    #         list_aux.append([round(x1, 5), round(x2, 5), round(x3, 5)])
     list_aux = []
-    for x1 in [1 - i * (1 / (num_points - 1)) for i in range(num_points)]:
+    # Ajustar os incrementos para evitar 0 e 1
+    increment = (0.999 - 0.001) / (num_points - 1)
+
+    for x1 in [0.001 + i * increment for i in range(num_points)]:
         x2_max = 1 - x1
-        for x2 in [i * (x2_max / (num_points - 1)) for i in range(num_points)]:
+        # Ajustar para que x2 também não alcance 0 ou x2_max
+        for x2 in [0.001 + i * (x2_max - 0.001) / (num_points - 1) for i in range(num_points)]:
             x3 = 1 - x1 - x2
-            list_aux.append([round(x1, 5), round(x2, 5), round(x3, 5)])
+            # Certificar-se de que x3 também esteja dentro do intervalo desejado
+            if 0.001 <= x3 <= 0.999:
+                list_aux.append([round(x1, 5), round(x2, 5), round(x3, 5)])
     return list_aux
 
 
@@ -32,7 +45,8 @@ def NRTL_method(alpha, list_A, list_fraction, Temperature, R):
     dict_aux = {
         'x_1': None,
         'x_2': None,
-        'G_mist': None
+        'G_mist': None,
+        'gammas': None
     }
     gammas_NRTL = []
     g_mist = []
@@ -60,6 +74,7 @@ def NRTL_method(alpha, list_A, list_fraction, Temperature, R):
     dict_aux['x_1'] = x_1
     dict_aux['x_2'] = x_2
     dict_aux['G_mist'] = g_mist
+    dict_aux['gammas'] = gammas_NRTL
     return dict_aux
 
 
@@ -100,55 +115,20 @@ def COSMO_SAC_method(list_comps, temperature):
         g_mist_aux += model.excessGibbs()
         g_mist.append(g_mist_aux)
 
-
     dict_c['x_1'] = x_1
     dict_c['x_2'] = x_2
     dict_c['G_mist'] = g_mist
     return dict_c
 
-t_0 = time.time()
-fractions = list_fractions(num_points=85)
-"""
-## NRTL Method
-list_a = [
-    [0, 483.32, 2022],
-    [-116.92, 0, 291.60],
-    [2382.4, 259.50, 0],
-]
-alpha_NRTL = 0.2
-dict_NRTL = NRTL_method(alpha=alpha_NRTL,
-                        list_A=list_a,
-                        list_fraction=fractions,
-                        Temperature=298.15,
-                        R=8.314)
 
-
-
-print(t_f-t_0)
-ax = plt.axes(projection='3d')
-
-# Data for a three-dimensional line
-
-# Data for three-dimensional scattered points
-xdata = dict_NRTL['x_1']
-ydata = dict_NRTL['x_2']
-zdata = dict_NRTL['G_mist']
-ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap='twilight_shifted')
-ax.set_xlabel('$x_1$', fontsize=12)
-ax.set_ylabel('$x_2$', fontsize=12)
-ax.zaxis.set_rotate_label(False)
-ax.set_zlabel('$G_{mist}/RT$', fontsize=12, rotation=0)
-plt.show()
-
-"""
 """
 T = (273.15+25)
 R = 8.314
 x_1 = 0
 x_2 = 0
 x_3 = 0
-comp_1 = Comp(name="acetona", x=x_1, list_group=[(1, 1), (18, 1)])
-comp_2 = Comp(name="Acetic acid ethenyl ester", x=x_2, list_group=[(1, 1), (5, 1), (23, 1)])
+comp_2 = Comp(name="acetona", x=x_1, list_group=[(1, 1), (18, 1)])
+comp_1 = Comp(name="MIC", x=x_2, list_group=[(1, 2), (2, 1), (3, 1), (18, 1)])
 comp_3 = Comp(name="water", x=x_3, list_group=[(16, 1)])
 eixo_x = []
 eixo_y = []
@@ -185,7 +165,25 @@ ax = plt.axes(projection='3d')
 xdata = eixo_x
 ydata = eixo_y
 zdata = eixo_z
-ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap='twilight_shifted')
+ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap='bone')
+ax.set_xlabel('$x_1$', fontsize=12)
+ax.set_ylabel('$x_2$', fontsize=12)
+ax.zaxis.set_rotate_label(False)
+ax.set_zlabel('$G_{mist}/RT$', fontsize=12, rotation=0)
+plt.show()
+"""
+"""
+## COSMO-SAC
+list_comps = ['FORMIC_ACID', '1-HEPTANOL', 'WATER']
+
+ax = plt.axes(projection='3d')
+dict_cosmo = COSMO_SAC_method(list_comps=list_comps,
+                              temperature=700.15)
+# Data for three-dimensional scattered points
+xdata = dict_cosmo['x_1']
+ydata = dict_cosmo['x_2']
+zdata = dict_cosmo['G_mist']
+ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap='bone')
 ax.set_xlabel('$x_1$', fontsize=12)
 ax.set_ylabel('$x_2$', fontsize=12)
 ax.zaxis.set_rotate_label(False)
@@ -193,24 +191,123 @@ ax.set_zlabel('$G_{mist}/RT$', fontsize=12, rotation=0)
 plt.show()
 """
 
+t_0 = time.time()
+# obtainning the fractions list
+n = 70
+fractions = list_fractions(num_points=n)
+## NRTL Method
+list_a = [
+    [0, -35.285, 258.07],
+    [-107.08, 0, -34.93],
+    [1342.3, 559.24, 0],
+]
+temp = 298.65
+alpha_NRTL = 0.2
+dict_NRTL = NRTL_method(alpha=alpha_NRTL,
+                        list_A=list_a,
+                        list_fraction=fractions,
+                        Temperature=temp,
+                        R=1.0)
+# determining parameters of the model NRTL
+t = {}
+for i, items in enumerate(list_a):
+    for j in range(len(items)):
+        if not f'{i+1}{j+1}' in t:
+            t[f'{i+1}{j+1}'] = None
+        t[f'{i+1}{j+1}'] = list_a[i][j]/temp
 
-## COSMO-SAC
-list_comps = ['AZOBENZENE', 'ACETONE', 'WATER']
+g = {}
+for i, items in enumerate(list_a):
+    for j in range(len(items)):
+        if not f'{i+1}{j+1}' in g:
+            g[f'{i+1}{j+1}'] = None
+        g[f'{i+1}{j+1}'] = np.exp(-alpha_NRTL*list_a[i][j]/temp)
 
-ax = plt.axes(projection='3d')
-dict_cosmo = COSMO_SAC_method(list_comps=list_comps,
-                              temperature=298.15)
-# Data for three-dimensional scattered points
-xdata = dict_cosmo['x_1']
-ydata = dict_cosmo['x_2']
-zdata = dict_cosmo['G_mist']
-ax.scatter3D(xdata, ydata, zdata, c=zdata, cmap='twilight_shifted')
+
+# assigning G_mixture function
+x1, x2 = sp.symbols('x1 x2')
+F1 = (x1 * sp.log(x1) + x2 * sp.log(x2) + (1 - x1 - x2) * sp.log(1 - x1 - x2))
+F2 = x1*(x1*t['11']*g['11'] + x2*t['21']*g['21'] + (1-x1-x2)*t['31']*g['31'])/(x1*g['11'] + x2*g['21'] + (1-x1-x2)*g['31'])
+F3 = x2*(x1*t['12']*g['12'] + x2*t['22']*g['22'] + (1-x1-x2)*t['32']*g['32'])/(x1*g['12'] + x2*g['22'] + (1-x1-x2)*g['32'])
+F4 = (1-x1-x2)*(x1*t['13']*g['13'] + x2*t['23']*g['23'] + (1-x1-x2)*t['33']*g['33'])/(x1*g['13'] + x2*g['23'] + (1-x1-x2)*g['33'])
+F_G_mix = F1 + F2 + F3 + F4
+
+# derivation G_mixture
+dg_dx1 = sp.diff(F_G_mix, x1)
+dg_dx2 = sp.diff(F_G_mix, x2)
+dg2_dx1x2 = sp.diff(F_G_mix, x1, x2)
+dg2_dx1x1 = sp.diff(F_G_mix, x1, x1)
+dg2_dx2x2 = sp.diff(F_G_mix, x2, x2)
+# obtaining the Hessian matrix of G_mixture
+H = hessian(F_G_mix, (x1, x2))
+det_H = dg2_dx1x1*dg2_dx2x2-dg2_dx1x2**2
+F_K = det_H / (dg_dx1**2 + dg_dx2**2 + 1) ** 2
+
+# starting code lines for plotting
+color_line = '#3A3A3A'
+# defining functions to plot
+G_func = sp.lambdify((x1, x2), F_G_mix, "numpy")
+K_func = sp.lambdify((x1, x2), F_K, "numpy")
+x1_vals = np.linspace(0.0005, 0.998, 2500)
+x2_vals = np.linspace(0.0005, 0.998, 2500)
+x1_grid, x2_grid = np.meshgrid(x1_vals, x2_vals)
+# creating grids
+K_grid = K_func(x1_grid, x2_grid)
+G_grid = G_func(x1_grid, x2_grid)
+# matrix where K < 0 and K >= 0
+G_grid_positive = np.where(K_grid >= 0, G_grid, np.nan)
+G_grid_negative = np.where(K_grid < 0, G_grid, np.nan)
+# creating the figure
+fig = plt.figure(figsize=(10, 7))
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(x1_grid, x2_grid, G_grid_positive, color='slategrey', alpha=0.6) # G where K >= 0
+ax.plot_surface(x1_grid, x2_grid, G_grid_negative, color='mediumturquoise', alpha=0.6) # G where K < 0
+# plotting the minimized equilibria criterio
+ax.plot3D([0.734, 0.006],
+          [0.139, 0.019],
+          [-0.538934, -0.0690738],
+          color=color_line,
+          linewidth=2.5,
+          linestyle='-',
+          alpha=0.9
+          )
+ax.plot3D([0.589, 0.007],
+          [0.247, 0.040],
+          [-0.7148538, -0.1126196],
+          color=color_line,
+          linewidth=2.5,
+          linestyle='-',
+          alpha=0.9
+          )
+ax.plot3D([0.513, 0.008],
+          [0.299, 0.055],
+          [-0.7634141, -0.1356586],
+          color=color_line,
+          linewidth=2.5,
+          linestyle='-',
+          alpha=0.9
+          )
+ax.plot3D([0.427, 0.007],
+          [0.353, 0.077],
+          [-0.7881635, -0.164091],
+          color=color_line,
+          linewidth=2.5,
+          linestyle='-',
+          alpha=0.9
+          )
+ax.plot3D([0.380, 0.010],
+          [0.379, 0.088],
+          [-0.7862252, -0.1798107],
+          color=color_line,
+          linewidth=2.5,
+          linestyle='-',
+          alpha=0.9
+          )
+
 ax.set_xlabel('$x_1$', fontsize=12)
 ax.set_ylabel('$x_2$', fontsize=12)
 ax.zaxis.set_rotate_label(False)
 ax.set_zlabel('$G_{mist}/RT$', fontsize=12, rotation=0)
-plt.show()
-
+# plt.show()
 t_f = time.time()
-
-print(t_f-t_0)
+print(t_f - t_0)
